@@ -5,13 +5,17 @@ from __future__ import annotations
 import errno
 import logging
 import os
+import re
+import secrets
 import stat
 import sys
 import tempfile
+import threading
 import time
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, BinaryIO
 
 from storage._filesystem import is_link_or_reparse
 from storage._writer_lock import (
@@ -31,7 +35,25 @@ logger = logging.getLogger(__name__)
 
 _PREFIXES = ("iopenpod-media-", "iopenpod-content-", "iopenpod-chaptered-")
 _OWNER = ".iopenpod-owner"
-_MARKER = b"iopenpod-host-staging-v1\n"
+# v1 workspaces each held a lock on their own marker, which costs one open
+# descriptor per live workspace. v2 markers name their process's shared lease.
+_LEGACY_MARKER = b"iopenpod-host-staging-v1\n"
+_MARKER = b"iopenpod-host-staging-v2\nowner="
+_LEASE_NAME = re.compile(r"\.owner-[0-9a-f]{32}\.lease")
+_MARKER_LIMIT = len(_MARKER) + 64
+
+
+@dataclass(slots=True)
+class _ProcessLease:
+    name: str
+    file: BinaryIO
+    workspaces: int = 0
+
+
+# One locked lease per staging root keeps descriptor use constant however many
+# workspaces a Sync retains. Guarded by the root cleanup lock, then this lock.
+_LEASES: dict[Path, _ProcessLease] = {}
+_LEASES_GUARD = threading.Lock()
 
 
 def _staging_root() -> Path:
@@ -86,12 +108,60 @@ def _cleanup_guard(root: Path, *, wait: bool = True) -> Generator[None]:
             _unlock_file(lease)
 
 
+def _retain_lease(root: Path) -> str:
+    """Return this process's lease name; the caller holds the cleanup guard."""
+    with _LEASES_GUARD:
+        lease = _LEASES.get(root)
+        if lease is None:
+            name = f".owner-{secrets.token_hex(16)}.lease"
+            file = _open_lock_file(root / name)
+            try:
+                _lock_file(file, "Host staging owner")
+            except BaseException:
+                file.close()
+                (root / name).unlink(missing_ok=True)
+                raise
+            lease = _LEASES[root] = _ProcessLease(name, file)
+        lease.workspaces += 1
+        return lease.name
+
+
+def _release_lease(root: Path) -> None:
+    """Drop one workspace's claim; the caller holds the cleanup guard."""
+    with _LEASES_GUARD:
+        lease = _LEASES[root]
+        lease.workspaces -= 1
+        if lease.workspaces:
+            return
+        del _LEASES[root]
+    try:
+        _unlock_file(lease.file)
+    finally:
+        lease.file.close()
+    # Windows cannot remove an open file. The guard keeps cleanup from
+    # observing the closed lease before it is removed.
+    (root / lease.name).unlink(missing_ok=True)
+
+
+def _write_marker(directory: Path, lease_name: str) -> None:
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    with os.fdopen(os.open(directory / _OWNER, flags, 0o600), "wb") as marker:
+        marker.write(_MARKER + lease_name.encode("ascii") + b"\n")
+
+
 @contextmanager
 def staging_directory(prefix: str) -> Generator[Path]:
     """Retain complete outputs on the selected Host volume until their owner exits.
 
-    An OS-held marker lock distinguishes abandoned workspaces from another live
-    process's preparations. Only these marked, flat workspaces can be reaped.
+    Each workspace marker names its process's locked lease, which distinguishes
+    abandoned workspaces from another live process's preparations. Only these
+    marked, flat workspaces can be reaped.
     """
     if prefix not in _PREFIXES:
         raise ValueError("Unsupported Host staging workspace")
@@ -104,16 +174,15 @@ def staging_directory(prefix: str) -> Generator[Path]:
     with _cleanup_guard(root):
         lifetime = ExitStack()
         try:
+            lease_name = _retain_lease(root)
+            lifetime.callback(_release_lease, root)
             directory = Path(
                 lifetime.enter_context(
                     tempfile.TemporaryDirectory(prefix=prefix, dir=root)
                 )
             )
-            lease = lifetime.enter_context(_open_lock_file(directory / _OWNER))
-            _lock_file(lease, "Host staging workspace")
-            lifetime.callback(_unlock_file, lease)
             # A directory without a complete marker is never cleanup authority.
-            lease.write(_MARKER)
+            _write_marker(directory, lease_name)
         except BaseException:
             lifetime.close()
             raise
@@ -136,7 +205,7 @@ class RetainedStagingDirectory:
 
 
 def cleanup_stale_staging() -> int:
-    """Remove only marked, unlocked workspaces from the current staging root.
+    """Remove only marked workspaces whose owner no longer holds its lease.
 
     Old unmarked system-temp directories and unexpected entries are untouched.
     Cleanup is best effort; a busy or unreadable workspace cannot block startup.
@@ -149,50 +218,85 @@ def cleanup_stale_staging() -> int:
         _require_owned_directory(root)
         root = root.resolve(strict=True)
         with _cleanup_guard(root, wait=False), pin_host_directory(root):
-            for directory in root.iterdir():
+            entries = tuple(root.iterdir())
+            referenced: set[str] = set()
+            for directory in entries:
                 if not directory.name.startswith(_PREFIXES):
                     continue
                 try:
-                    if _remove_abandoned(directory):
-                        removed += 1
+                    owner = _remove_abandoned(root, directory)
                 except (OSError, ValueError, StorageError):
                     # Includes active leases, files being closed by their owner,
                     # and another process completing the same cleanup.
                     continue
+                if owner is None:
+                    removed += 1
+                elif owner:
+                    referenced.add(owner)
+            for lease in entries:
+                if _LEASE_NAME.fullmatch(lease.name) and lease.name not in referenced:
+                    _remove_abandoned_lease(lease)
     except (OSError, ValueError, StorageError) as error:
         logger.debug("Host staging cleanup was unavailable: %s", error)
     return removed
 
 
-def _remove_abandoned(directory: Path) -> bool:
+@contextmanager
+def _owner_released(lease: Path) -> Generator[None]:
+    """Hold a crashed owner's lease while reaping; a live owner raises busy."""
+    # Live leases exist whenever the cleanup guard is free.
+    if not (lease.exists() or lease.is_symlink()):
+        yield
+        return
+    with _open_host_source(lease, writable=True) as handle:
+        _lock_file(handle, "Host staging owner")
+        try:
+            yield
+        finally:
+            _unlock_file(handle)
+
+
+def _remove_abandoned(root: Path, directory: Path) -> str | None:
+    """Return ``None`` once removed, else the retained owner's lease name.
+
+    An empty name means the workspace is retained without a v2 owner.
+    """
     _require_owned_directory(directory)
     identity = directory.stat()
     marker = directory / _OWNER
     with (
         pin_host_directory(directory),
-        _open_host_source(marker, writable=True) as lease,
+        _open_host_source(marker, writable=True) as handle,
+        ExitStack() as ownership,
     ):
-        metadata = os.fstat(lease.fileno())
+        metadata = os.fstat(handle.fileno())
         if metadata.st_nlink != 1 or (
             sys.platform != "win32" and metadata.st_uid != os.getuid()
         ):
-            return False
-        _lock_file(lease, "Host staging workspace")
-        try:
-            if lease.read(len(_MARKER) + 1) != _MARKER:
-                return False
-            children = tuple(directory.iterdir())
-            # These workspaces contain regular files only. Do not recurse into
-            # unexpected directories or follow links left by external changes.
-            for child in children:
-                info = child.lstat()
-                if is_link_or_reparse(info) or not stat.S_ISREG(info.st_mode):
-                    return False
-            for child in children:
-                if child.name != _OWNER:
-                    child.unlink()
-        finally:
-            _unlock_file(lease)
+            return ""
+        content = handle.read(_MARKER_LIMIT + 1)
+        owner = ""
+        if content == _LEGACY_MARKER:
+            # Earlier versions locked the marker itself for a workspace's life.
+            _lock_file(handle, "Host staging workspace")
+            ownership.callback(_unlock_file, handle)
+        elif content.startswith(_MARKER) and content.endswith(b"\n"):
+            owner = content[len(_MARKER) : -1].decode("ascii", "replace")
+            if not _LEASE_NAME.fullmatch(owner):
+                return ""
+            ownership.enter_context(_owner_released(root / owner))
+        else:
+            return ""
+        children = tuple(directory.iterdir())
+        # These workspaces contain regular files only. Do not recurse into
+        # unexpected directories or follow links left by external changes.
+        for child in children:
+            info = child.lstat()
+            if is_link_or_reparse(info) or not stat.S_ISREG(info.st_mode):
+                return owner
+        for child in children:
+            if child.name != _OWNER:
+                child.unlink()
     # Windows cannot remove the open marker or pinned directory. Close handles
     # first, then recheck identity before removing the now-empty workspace.
     current = directory.lstat()
@@ -200,7 +304,19 @@ def _remove_abandoned(directory: Path) -> bool:
         identity.st_dev,
         identity.st_ino,
     ):
-        return False
+        return owner
     marker.unlink()
     directory.rmdir()
-    return True
+    return None
+
+
+def _remove_abandoned_lease(lease: Path) -> None:
+    """Remove a crashed owner's unreferenced lease; live leases stay locked."""
+    try:
+        with _owner_released(lease):
+            pass
+        info = lease.lstat()
+        if stat.S_ISREG(info.st_mode) and not is_link_or_reparse(info):
+            lease.unlink()
+    except (OSError, StorageError):
+        return

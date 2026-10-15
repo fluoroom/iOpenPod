@@ -11,6 +11,7 @@ from PySide6.QtCore import QCoreApplication, QSocketNotifier, QTimer
 from PySide6.QtWidgets import QApplication
 
 from iOpenPod.app.context import AppContext
+from iOpenPod.app.core.resource_limits import raise_open_file_limit
 from iOpenPod.app.playback.system_media import (
     SystemMediaBridge,
     create_system_media_session,
@@ -36,6 +37,7 @@ def start_ui() -> int:
     """Start iOpenPod and discover connected Device Candidates."""
 
     initialize_update_runtime()
+    raise_open_file_limit()
     cleanup_stale_staging()
     _set_windows_app_user_model_id()
     configure_display()

@@ -3,6 +3,8 @@
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
@@ -94,6 +96,7 @@ else:
     assert path.stat().st_size == 256 * 1024
     assert cleanup_stale_staging() == 1
     assert not path.parent.exists()
+    assert not list(path.parent.parent.glob(".owner-*"))
     assert cleanup_stale_staging() == 0
 
 
@@ -230,3 +233,139 @@ def test_cleanup_rejects_a_shared_staging_root(
             pytest.fail("Shared staging root was accepted")
     finally:
         root.chmod(0o700)
+
+
+def _open_descriptors() -> int:
+    return len(os.listdir("/proc/self/fd" if sys.platform == "linux" else "/dev/fd"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor table")
+def test_live_workspaces_share_one_descriptor_per_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    before = _open_descriptors()
+    with ExitStack() as workspaces:
+        outputs = []
+        for _ in range(300):
+            workspace = workspaces.enter_context(
+                media_workspace(checkpoint=lambda: None)
+            )
+            output = Path(workspace.output_path(".mp3"))
+            output.write_bytes(b"prepared")
+            outputs.append(output)
+        # A Sync retains every prepared Track until publication.
+        assert _open_descriptors() - before <= 1
+        root = outputs[0].parent.parent
+        assert len(list(root.glob(".owner-*.lease"))) == 1
+        assert cleanup_stale_staging() == 0
+        assert all(output.read_bytes() == b"prepared" for output in outputs)
+    assert _open_descriptors() == before
+    assert not list(root.glob(".owner-*"))
+    assert not any(root.glob("iopenpod-media-*"))
+
+
+def _staging_root(tmp_path: Path) -> Path:
+    with media_workspace(checkpoint=lambda: None) as workspace:
+        return Path(workspace.output_path(".mp3")).parent.parent
+
+
+def test_abandoned_legacy_workspace_is_still_reclaimed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    legacy = _staging_root(tmp_path) / "iopenpod-media-legacy"
+    legacy.mkdir(mode=0o700)
+    (legacy / ".iopenpod-owner").write_bytes(b"iopenpod-host-staging-v1\n")
+    (legacy / "output.mp3").write_bytes(b"prepared")
+    assert cleanup_stale_staging() == 1
+    assert not legacy.exists()
+
+
+_VALID_OWNER = b".owner-" + b"0" * 32 + b".lease"
+
+
+@pytest.mark.parametrize(
+    "owner",
+    (
+        b"../outside.lease\n",
+        b".owner-short.lease\n",
+        _VALID_OWNER + b"/extra\n",
+        _VALID_OWNER,  # Incomplete: no final newline.
+    ),
+)
+def test_malformed_owner_markers_are_not_cleanup_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, owner: bytes
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    workspace = _staging_root(tmp_path) / "iopenpod-media-malformed"
+    workspace.mkdir(mode=0o700)
+    (workspace / ".iopenpod-owner").write_bytes(
+        b"iopenpod-host-staging-v2\nowner=" + owner
+    )
+    original = workspace / "output.mp3"
+    original.write_bytes(b"unowned data")
+    assert cleanup_stale_staging() == 0
+    assert original.read_bytes() == b"unowned data"
+
+
+def test_workspace_whose_owner_lease_is_gone_is_reclaimed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    workspace = _staging_root(tmp_path) / "iopenpod-media-orphan"
+    workspace.mkdir(mode=0o700)
+    (workspace / ".iopenpod-owner").write_bytes(
+        b"iopenpod-host-staging-v2\nowner=.owner-" + b"a" * 32 + b".lease\n"
+    )
+    (workspace / "output.mp3").write_bytes(b"prepared")
+    assert cleanup_stale_staging() == 1
+    assert not workspace.exists()
+
+
+def test_cleanup_in_another_process_keeps_workspaces_of_a_live_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    with (
+        media_workspace(checkpoint=lambda: None) as first,
+        media_workspace(checkpoint=lambda: None) as second,
+    ):
+        outputs = [Path(w.output_path(".mp3")) for w in (first, second)]
+        for output in outputs:
+            output.write_bytes(b"prepared media")
+        root = outputs[0].parent.parent
+        lease = next(root.glob(".owner-*.lease"))
+        checked = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from storage.host_staging import cleanup_stale_staging; "
+                "print(cleanup_stale_staging())",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+        assert checked.stdout.strip() == "0"
+        assert lease.exists()
+        assert all(o.read_bytes() == b"prepared media" for o in outputs)
+
+
+def test_parallel_workspaces_share_and_release_one_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    root = _staging_root(tmp_path)
+
+    def prepare(_: int) -> None:
+        for _ in range(40):
+            with media_workspace(checkpoint=lambda: None) as workspace:
+                Path(workspace.output_path(".mp3")).write_bytes(b"prepared")
+                assert len(list(root.glob(".owner-*.lease"))) == 1
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(prepare, range(8)))
+    assert not list(root.glob(".owner-*"))
+    assert not any(root.glob("iopenpod-media-*"))
