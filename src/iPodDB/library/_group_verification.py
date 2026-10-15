@@ -17,6 +17,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._browse_groups import album_values, browse_groups
+from iPodDB.library._track_layout import holds_field
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.library.writing import IdentityMapping, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
@@ -131,7 +132,15 @@ def verify_browse_groups(
                             output[t.track_id],
                         )
                 continue
-            actual_ids = {refs[i] for i in member_ids if i in refs}
+            holders = {
+                i
+                for i in member_ids
+                if i in output
+                and holds_field(output[i], "album_id" if album else "artist_id_ref")
+            }
+            if not holders:
+                continue  # No member header can reference a browse group.
+            actual_ids = {refs[i] for i in holders}
             first_id = members[0].track_id
             if first_id not in output:
                 continue  # The semantic verifier reports missing Tracks.
@@ -268,6 +277,8 @@ def verify_browse_groups(
         if t.track_id not in output:
             continue
         chunk = output[t.track_id]
+        if not holds_field(chunk, "composer_id"):
+            continue
         previous = old_tracks.get(t.track_id)
         value = chunk.header.composer_id
         if previous is not None and previous.metadata.composer == t.metadata.composer:

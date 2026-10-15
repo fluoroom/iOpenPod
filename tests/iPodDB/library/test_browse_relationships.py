@@ -453,3 +453,71 @@ def test_verification_rejects_corrupted_native_browse_relationships(
     assert any(i.code.startswith("verification.browse_") for i in result.issues), (
         result.issues
     )
+
+
+def short_header_browse_source() -> IPodLibrary:
+    """Original-format MHIT headers end before album, artist and composer IDs."""
+    document = parse_iTunesDB(browse_source().serialize().itunes)
+    for selection in document.find_chunks(MhitHeader):
+        chunk = selection.chunk
+        document = document.replace_chunk(
+            selection,
+            replace(
+                chunk,
+                header=replace(
+                    chunk.header, album_id=0, artist_id_ref=0, composer_id=0
+                ),
+                generic_header=replace(chunk.generic_header, header_length=0x9C),
+                raw_header=chunk.raw_header[:0x9C],
+            ),
+        )
+    return IPodLibrary(write_iTunesDB(document))
+
+
+def test_deleting_a_track_keeps_short_track_headers_unreferenced() -> None:
+    source = short_header_browse_source()
+    deleted = replace(
+        source.snapshot,
+        tracks=source.snapshot.tracks[1:],
+        playlists=tuple(
+            replace(p, entries=tuple(e for e in p.entries if e.track_id != 1))
+            for p in source.snapshot.playlists
+        ),
+    )
+    result = source.prepare(
+        source.analyze(source.begin_draft(deleted, delete_omissions=True)),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    document = parse_iTunesDB(result.prepared.itunes)
+    (track,) = document.find_chunks(MhitHeader)
+    assert track.chunk.generic_header.header_length == 0x9C
+    assert {s.chunk.header.album_id for s in document.find_chunks(MhiaHeader)} == {
+        5,
+        8,
+    }
+
+
+def test_group_and_composer_edits_leave_short_track_headers_unreferenced() -> None:
+    source = short_header_browse_source()
+    first, second = source.snapshot.tracks
+    edited = replace(
+        first,
+        album="Split",
+        artist="Split artist",
+        metadata=replace(first.metadata, composer="New composer"),
+    )
+    desired = replace(source.snapshot, tracks=(edited, second))
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    document = parse_iTunesDB(result.prepared.itunes)
+    assert all(
+        s.chunk.generic_header.header_length == 0x9C
+        for s in document.find_chunks(MhitHeader)
+    )
+    # No orphaned group rows are created for Tracks that cannot reference them.
+    assert len(document.find_chunks(MhiaHeader)) == 2
+    assert len(document.find_chunks(MhiiHeader)) == 2
+    reloaded = IPodLibrary(result.prepared.itunes).snapshot.tracks[0]
+    assert (reloaded.album, reloaded.artist) == ("Split", "Split artist")
+    assert reloaded.metadata.composer == "New composer"
