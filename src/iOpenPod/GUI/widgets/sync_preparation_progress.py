@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
+import shiboken6
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QFrame,
@@ -117,8 +118,9 @@ class SyncPreparationProgress(QScrollArea):
             if identity not in identities:
                 removed = self._rows.pop(identity)
                 self._layout.removeWidget(removed)
-                removed.setParent(None)
-                removed.deleteLater()
+                # Delete while still parented: a parentless row is a top-level
+                # window, which a pending show can put on screen.
+                shiboken6.delete(removed)
         for index, item in enumerate(items):
             row = self._rows.get(item.item_id)
             if row is None:

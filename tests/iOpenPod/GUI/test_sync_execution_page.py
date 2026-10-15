@@ -4,6 +4,7 @@ import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QLabel,
     QPlainTextEdit,
@@ -339,6 +340,31 @@ def test_active_rows_remain_visible_when_workers_are_replaced_and_can_scroll() -
     finally:
         page.close()
         page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_finished_rows_never_become_separate_windows() -> None:
+    workers = SyncPreparationProgress()
+    workers.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    activity = MediaPreparationProgress(
+        MediaPreparationPhase.VERIFYING, "Verifying prepared media", 30, 120
+    )
+    try:
+        workers.show()
+        workers.set_items((WriteItemProgress("first", "First Track", activity),))
+        APPLICATION.processEvents()
+        workers.set_items((WriteItemProgress("second", "Second Track", activity),))
+        stray = [
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if widget.objectName() == "syncPreparationRow"
+        ]
+        assert stray == []
+        rows = workers.findChildren(QFrame, "syncPreparationRow")
+        assert len(rows) == 1 and rows[0].toolTip() == "second"
+    finally:
+        workers.close()
+        workers.deleteLater()
         APPLICATION.processEvents()
 
 
