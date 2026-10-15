@@ -17,7 +17,8 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._browse_groups import album_values, browse_groups
-from iPodDB.library._track_layout import holds_field
+from iPodDB.library._track_header_expansion import optional_field_available
+from iPodDB.library._track_layout import holds_field, predates_browse_references
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.library.writing import IdentityMapping, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
@@ -58,6 +59,8 @@ def verify_browse_groups(
     before: LibrarySnapshot,
     desired: LibrarySnapshot,
     mappings: tuple[IdentityMapping, ...],
+    *,
+    database_version: int | None = None,
 ) -> tuple[WriteIssue, ...]:
     issues: list[WriteIssue] = []
     track_ids = {m.draft_id: m.output_id for m in mappings if m.subject == "track"}
@@ -135,8 +138,7 @@ def verify_browse_groups(
             holders = {
                 i
                 for i in member_ids
-                if i in output
-                and holds_field(output[i], "album_id" if album else "artist_id_ref")
+                if i in output and not predates_browse_references(output[i])
             }
             if not holders:
                 continue  # No member header can reference a browse group.
@@ -292,6 +294,18 @@ def verify_browse_groups(
                 )
             continue
         composer_key = t.metadata.composer.casefold()
+        if not optional_field_available(
+            old_native.get(t.track_id), "composer_id", database_version
+        ):
+            if value:
+                fail(
+                    "composer_identity",
+                    t.track_id,
+                    "ipod.composer_id",
+                    "This layout must retain composer text without a native composer ID.",
+                    chunk,
+                )
+            continue
         options = known_composers.get(composer_key, set())
         valid = (
             value == 0

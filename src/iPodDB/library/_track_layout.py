@@ -12,3 +12,13 @@ _FIELD_ENDS = {
 def holds_field(chunk: ParsedChunk[MhitHeader], name: str) -> bool:
     """Original-format headers (e.g. 156 bytes) end before the browse references."""
     return _FIELD_ENDS[name] <= chunk.generic_header.header_length
+
+
+def predates_browse_references(chunk: ParsedChunk[MhitHeader]) -> bool:
+    """Original-format headers end before album_id and carry no browse references.
+
+    Only these may leave an album or artist group unreferenced. A browse-aware
+    layout that cannot fit a required reference is expanded or blocked instead
+    (ADR-0148).
+    """
+    return not holds_field(chunk, "album_id")

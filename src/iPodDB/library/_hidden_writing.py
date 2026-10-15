@@ -30,7 +30,7 @@ from iPodDB.library._browse_index import BrowseIndex, resolve_indexes
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library._identities import IdentityAllocator
 from iPodDB.library._playlist_datasets import is_master, playlist_rows
-from iPodDB.library._track_layout import holds_field
+from iPodDB.library._track_layout import holds_field, predates_browse_references
 from iPodDB.library._track_writing import edit_text
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.library.writing import WriteIssue
@@ -203,7 +203,6 @@ def reconcile_hidden(
             )
             continue
         album = dataset_kind == 4
-        reference_field = "album_id" if album else "artist_id_ref"
         rows = {
             c.header.album_id
             if isinstance(c.header, MhiaHeader)
@@ -257,8 +256,8 @@ def reconcile_hidden(
                     sorted(candidates),
                 )
                 continue
-            if not any(
-                holds_field(native_tracks[track_ids[t.track_id]], reference_field)
+            if all(
+                predates_browse_references(native_tracks[track_ids[t.track_id]])
                 for t in members
             ):
                 # Without a Track that can reference it, a group row would be orphaned.
@@ -408,8 +407,8 @@ def reconcile_hidden(
         inverse_ids = {native: draft for draft, native in track_ids.items()}
         for track_selection in document.find_chunks(MhitHeader):
             draft_id = inverse_ids.get(track_selection.chunk.header.track_id)
-            if draft_id not in assigned or not holds_field(
-                track_selection.chunk, reference_field
+            if draft_id not in assigned or predates_browse_references(
+                track_selection.chunk
             ):
                 continue
             value = assigned[draft_id]
