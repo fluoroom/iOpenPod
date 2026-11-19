@@ -10,6 +10,7 @@ DEFAULT_SOURCE="git+${FORK_URL}@main"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd)"
 
+TOOL_BIN_DIR="${UV_TOOL_BIN_DIR:-${HOME}/.local/bin}"
 DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 DESKTOP_DIR="${DATA_HOME}/applications"
 ICON_THEME_DIR="${DATA_HOME}/icons/hicolor"
@@ -136,8 +137,8 @@ install_desktop_entry() {
 Type=Application
 Name=iOpenPod
 Comment=Manage your iPod media library without iTunes (fluoroom fork)
-Exec="${HOME}/.local/bin/${TOOL_NAME}"
-TryExec="${HOME}/.local/bin/${TOOL_NAME}"
+Exec="${TOOL_BIN_DIR}/${TOOL_NAME}"
+TryExec="${TOOL_BIN_DIR}/${TOOL_NAME}"
 Icon=${APP_ID}
 Categories=AudioVideo;Audio;Utility;
 Keywords=iPod;Music;Sync;
@@ -171,20 +172,21 @@ warn_platform
 install_system_dependencies
 remove_previous_install
 
+export UV_TOOL_BIN_DIR="${TOOL_BIN_DIR}"
 printf 'Installing iOpenPod from %s\n' "${SOURCE}"
 uv tool install --force "${SOURCE}"
 
 install_desktop_entry
 refresh_caches
 
-if ! "${HOME}/.local/bin/${TOOL_NAME}" --version; then
+if ! "${TOOL_BIN_DIR}/${TOOL_NAME}" --version; then
     printf 'iOpenPod was installed, but the launcher did not report a version.\n' >&2
 fi
 
 cat <<EOF
 
 iOpenPod is installed.
-  Launcher: ${HOME}/.local/bin/${TOOL_NAME}
+  Launcher: ${TOOL_BIN_DIR}/${TOOL_NAME}
   Desktop:  ${DESKTOP_FILE}
 
 If ~/.local/bin is not on your PATH, add it or launch iOpenPod from the

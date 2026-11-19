@@ -5,6 +5,7 @@ set -euo pipefail
 APP_ID="io.github.fluoroom.iOpenPod"
 TOOL_NAME="iopenpod"
 
+TOOL_BIN_DIR="${UV_TOOL_BIN_DIR:-${HOME}/.local/bin}"
 DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 DESKTOP_DIR="${DATA_HOME}/applications"
 ICON_THEME_DIR="${DATA_HOME}/icons/hicolor"
@@ -82,7 +83,7 @@ uv tool uninstall "${TOOL_NAME}" >/dev/null 2>&1 ||
     uv tool uninstall "iOpenPod" >/dev/null 2>&1 ||
     true
 
-rm -f -- "${DESKTOP_FILE}" "${ICON_FILE}" "${LEGACY_DESKTOP}" "${LEGACY_ICON}" "${LEGACY_LINK}"
+rm -f -- "${TOOL_BIN_DIR}/${TOOL_NAME}" "${DESKTOP_FILE}" "${ICON_FILE}" "${LEGACY_DESKTOP}" "${LEGACY_ICON}" "${LEGACY_LINK}"
 refresh_caches
 
 if ((PURGE)); then
