@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 
 from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.dates import refresh_host_timezone
+from iOpenPod.app.core.resource_limits import raise_open_file_limit
 from iOpenPod.app.core.settings.definitions import ONBOARDING_COMPLETE
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.playback.system_media import (
@@ -39,6 +40,7 @@ def start_ui() -> int:
     """Start iOpenPod and discover connected Device Candidates."""
 
     initialize_update_runtime()
+    raise_open_file_limit()
     cleanup_stale_staging()
     _set_windows_app_user_model_id()
     configure_display()
