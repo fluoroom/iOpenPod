@@ -12,6 +12,8 @@
 >   Check or ReplayGain value already exists. Compute Sound Check otherwise
 >   analyzes only missing values.
 > * A raised POSIX open-file soft limit for large Syncs.
+> * Arch Linux/KDE Plasma install and uninstall scripts under
+>   `packaging/linux/arch-kde/`.
 >
 > Everything else follows upstream iOpenPod.
 
