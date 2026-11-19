@@ -20,9 +20,11 @@ The install script offers to install missing packages with `pacman`.
 ./packaging/linux/arch-kde/install.sh
 ```
 
-The default source is `git+https://github.com/fluoroom/iOpenPod.git@main`, so
-`uv tool upgrade iopenpod` later follows the fork. Pass `--local` to install the
-current checkout instead, or `--yes` to skip package prompts.
+The default source is `git+https://github.com/fluoroom/iOpenPod.git@main`.
+Re-run this script to update from the fork; it forces a rebuild from the
+selected source. `uv tool upgrade iopenpod` only upgrades when the project
+version changes. Pass `--local` to install the current checkout instead, or
+`--yes` to skip package prompts.
 
 The script replaces the old manual `~/.local/bin/iOpenPod` launcher and
 `io.github.therealsavi.iOpenPod.desktop` entry with the fork's launcher and
