@@ -174,7 +174,7 @@ remove_previous_install
 
 export UV_TOOL_BIN_DIR="${TOOL_BIN_DIR}"
 printf 'Installing iOpenPod from %s\n' "${SOURCE}"
-uv tool install --force "${SOURCE}"
+uv tool install --force --reinstall "${SOURCE}"
 
 install_desktop_entry
 refresh_caches
