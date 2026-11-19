@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD033 -->
 # iOpenPod: iPod Manager and iTunes replacement
 
+> [!NOTE]
+> **This fork's changes** — This is
+> [fluoroom/iOpenPod](https://github.com/fluoroom/iOpenPod), a personal fork of
+> [TheRealSavi/iOpenPod](https://github.com/TheRealSavi/iOpenPod). On top of
+> upstream it adds:
+>
+> * **Sound Check target** selection from -23 to -10 LUFS, default -16.5 LUFS.
+> * **Force Sound Check**, which re-analyzes prepared Tracks even when a Sound
+>   Check or ReplayGain value already exists. Compute Sound Check otherwise
+>   analyzes only missing values.
+> * A raised POSIX open-file soft limit for large Syncs.
+>
+> Everything else follows upstream iOpenPod.
+
 <p align="center"><strong>
 iOpenPod
 </strong></p>

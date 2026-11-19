@@ -115,6 +115,15 @@ on. Existing BPM and Host files are preserved. Normal Smart Playlist evaluation,
 optional Rockbox tagging, Library publication, and Sync history use the resulting
 metadata. See ADR-0076 and ADR-0179.
 
+Settings > Sync also offers **Compute Sound Check**, off by default. It analyzes
+loudness only when a Track lacks a usable Sound Check or ReplayGain value, while
+**Force Sound Check** re-analyzes Tracks whose media is prepared even when a value
+exists. Both use the selectable Sound Check target, default -16.5 LUFS (the
+Original iOpenPod's iTunes-derived reference); -18 LUFS follows ReplayGain 2.0.
+The target applies only to newly computed values, so a library mixing targets can
+play Tracks at different levels. Unchanged Tracks and Host files keep their
+current values. See [ADR-0275](docs/adr/0275-choose-the-sound-check-target-and-force-recomputation.md).
+
 First launch opens a nine-page onboarding dialog before device loading
 and startup prompts. Users choose navigation style, iPod Library View Mode, device
 artwork, then learn about transcoding and the four steps of Sync: opening the

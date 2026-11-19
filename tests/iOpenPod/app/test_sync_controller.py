@@ -24,6 +24,8 @@ from iOpenPod.app.core.settings.definitions import (
     BACK_SYNC_RATINGS,
     COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
+    FORCE_SOUND_CHECK,
+    SOUND_CHECK_TARGET_LUFS,
 )
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
@@ -96,6 +98,8 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
     workspace.load(active.library)
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     settings.set_global(COMPUTE_SOUND_CHECK, True)
+    settings.set_global(FORCE_SOUND_CHECK, True)
+    settings.set_global(SOUND_CHECK_TARGET_LUFS, -18.0)
     settings.set_global(COMPUTE_MISSING_BPM, True)
     settings.set_global(ANALYZE_FOR_GENIUS, False)
     settings.set_global(SCROBBLE_DURING_SYNC, True)
@@ -110,6 +114,8 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
         wait_for(service.entered.is_set)
         assert workspace.locked and devices.busy
         settings.set_global(COMPUTE_SOUND_CHECK, False)
+        settings.set_global(FORCE_SOUND_CHECK, False)
+        settings.set_global(SOUND_CHECK_TARGET_LUFS, -14.0)
         settings.set_global(COMPUTE_MISSING_BPM, False)
         settings.set_global(ANALYZE_FOR_GENIUS, True)
         settings.set_global(SCROBBLE_DURING_SYNC, False)
@@ -117,6 +123,8 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
         assert (
             service.request is not None and service.request.options.compute_sound_check
         )
+        assert service.request.options.sound_check_target_lufs == -18.0
+        assert service.request.options.force_sound_check
         assert not service.request.options.analyze_for_genius
         assert service.request.options.compute_missing_bpm
         assert service.request.playlist_choices == choices

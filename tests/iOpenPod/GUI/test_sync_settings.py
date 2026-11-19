@@ -8,9 +8,11 @@ from iOpenPod.app.core.settings.definitions import (
     ANALYZE_FOR_GENIUS,
     COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
+    FORCE_SOUND_CHECK,
     LOSSY_ENCODER,
     ROCKBOX_METADATA_SUPPORT,
     SMART_QUALITY_BY_CONTENT_TYPE,
+    SOUND_CHECK_TARGET_LUFS,
     TRANSCODE_LOSSLESS_TO_LOSSY,
 )
 from iOpenPod.app.core.settings.service import SettingsService
@@ -158,11 +160,24 @@ def test_policy_precedence_is_visible_and_optional_sync_settings_save() -> None:
     settings.set_global(SMART_QUALITY_BY_CONTENT_TYPE, True)
     assert _combo(widget, "spokenWordBitrate").isEnabled()
     sound = _combo(sync, "computeSoundCheck")
+    target = _combo(sync, "soundCheckTargetLufs")
+    force = _combo(sync, "forceSoundCheck")
     bpm = _combo(sync, "computeMissingBpm")
     assert bpm.currentData() is False
     bpm.setCurrentIndex(bpm.findData(True))
     assert settings.get(COMPUTE_MISSING_BPM) is True
+    assert target.currentData() == -16.5
+    assert target.findData(-12.0) >= 0
+    assert target.findData(-10.0) >= 0
+    assert not target.isEnabled()
+    assert force.currentData() is False
+    assert not force.isEnabled()
     sound.setCurrentIndex(sound.findData(True))
+    assert target.isEnabled() and force.isEnabled()
+    target.setCurrentIndex(target.findData(-18.0))
+    force.setCurrentIndex(force.findData(True))
+    assert settings.get(SOUND_CHECK_TARGET_LUFS) == -18.0
+    assert settings.get(FORCE_SOUND_CHECK) is True
     genius = _combo(sync, "analyzeForGenius")
     assert genius.currentData() is True
     genius.setCurrentIndex(genius.findData(False))

@@ -96,6 +96,7 @@ from iOpenPod.app.services.device_coordinator import (
     SyncRestoredCleanupPendingError,
 )
 from iOpenPod.app.smart_playlist_preview import can_refresh_smart_playlist
+from iOpenPod.app.sound_check import DEFAULT_SOUND_CHECK_TARGET_LUFS
 from iOpenPod.app.sync_artwork_fallback import (
     pending_cover_provenance,
     without_cover_changes,
@@ -196,6 +197,8 @@ class SyncExecutionStatus(StrEnum):
 class SyncOptions:
     analyze_for_genius: bool = True
     compute_sound_check: bool = False
+    force_sound_check: bool = False
+    sound_check_target_lufs: float = DEFAULT_SOUND_CHECK_TARGET_LUFS
     normalize_tags: bool = False
     rotate_tall_photos: bool = False
     fit_thumbnails: bool = False
@@ -1967,6 +1970,8 @@ class SyncExecutor:
                         rockbox_metadata=request.options.rockbox_metadata,
                         normalize_tags=request.options.normalize_tags,
                         compute_sound_check=request.options.compute_sound_check,
+                        force_sound_check=request.options.force_sound_check,
+                        sound_check_target_lufs=request.options.sound_check_target_lufs,
                         progress=progress,
                     )
                 )
@@ -2101,6 +2106,8 @@ class SyncExecutor:
                     rockbox_metadata=request.options.rockbox_metadata,
                     normalize_tags=request.options.normalize_tags,
                     compute_sound_check=request.options.compute_sound_check,
+                    force_sound_check=request.options.force_sound_check,
+                    sound_check_target_lufs=request.options.sound_check_target_lufs,
                     progress=activity,
                     stream_selection=item.stream_selection,
                 )

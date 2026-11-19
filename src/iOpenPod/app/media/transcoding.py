@@ -42,6 +42,7 @@ from iOpenPod.app.media.subtitles.preparation import (
     verify_subtitles,
 )
 from iOpenPod.app.media.tags import apply_tag_values, inspection_tag_values
+from iOpenPod.app.sound_check import DEFAULT_SOUND_CHECK_TARGET_LUFS
 from iPodDB.library import AudioEncoding, MediaKind
 from storage.host_input import LocalHostFile
 from storage.media_processing import (
@@ -111,6 +112,26 @@ VBR_QUALITIES = {
     LossyEncoder.AAC: (1, 2),
     LossyEncoder.MP3: tuple(range(10)),
 }
+
+SILENCE_GATE_LUFS = -70.0
+# value = 1000 * 10 ** (-gain / 10) can encode at most a 30 dB boost exactly.
+MAX_SOUND_CHECK_GAIN_DB = 30.0
+_INTEGRATED_LOUDNESS = re.compile(rb"I:\s*(-?\d+(?:\.\d+)?)\s+LUFS")
+
+
+def measure_sound_check_gain(
+    stderr: bytes,
+    target_lufs: float = DEFAULT_SOUND_CHECK_TARGET_LUFS,
+) -> float | None:
+    """Return gain toward the target from the last EBU R128 whole-track figure."""
+
+    measurements = _INTEGRATED_LOUDNESS.findall(stderr)
+    if not measurements:
+        return None
+    measured = float(measurements[-1])
+    if measured <= SILENCE_GATE_LUFS:
+        return None
+    return target_lufs - measured
 
 
 @dataclass(frozen=True, slots=True)
@@ -970,6 +991,8 @@ class MediaTranscoder:
         rockbox_metadata: bool = False,
         normalize_tags: bool = False,
         compute_sound_check: bool = False,
+        force_sound_check: bool = False,
+        sound_check_target_lufs: float = DEFAULT_SOUND_CHECK_TARGET_LUFS,
         progress: Callable[[MediaPreparationProgress], None] | None = None,
         stream_selection: MediaStreamSelection | None = None,
     ) -> Generator[PreparedTranscode]:
@@ -1390,7 +1413,15 @@ class MediaTranscoder:
                     "media.caption_payload_changed",
                     "The prepared video did not preserve its selected caption data. This item was not written to the iPod.",
                 )
-            measure_sound_check = compute_sound_check and bool(result.audio_streams)
+            measure_sound_check = (
+                compute_sound_check
+                and bool(result.audio_streams)
+                and (
+                    force_sound_check
+                    or metadata is None
+                    or metadata.metadata.normalization_gain_db is None
+                )
+            )
             verification_message = (
                 "Verifying prepared media and measuring Sound Check"
                 if measure_sound_check
@@ -1490,17 +1521,19 @@ class MediaTranscoder:
             )
             if measure_sound_check:
                 # The ebur128 filter prints integrated loudness as "I: -14.2 LUFS";
-                # the last such line is the whole-track figure. Sound Check aims
-                # at -16.5 LUFS, and anything at or below -70 LUFS is the filter's
-                # silence gate rather than a measurement.
-                measurements = re.findall(
-                    rb"I:\s*(-?\d+(?:\.\d+)?)\s+LUFS", verification_output.stderr
+                # the last such line is the whole-track figure. Anything at or
+                # below -70 LUFS is the filter's silence gate.
+                gain = measure_sound_check_gain(
+                    verification_output.stderr, sound_check_target_lufs
                 )
-                if measurements and float(measurements[-1]) > -70:
-                    gain = -16.5 - float(measurements[-1])
-                else:
+                if gain is None:
                     warnings += (
                         "Sound Check could not measure this silent or very short track; its existing gain was retained.",
+                    )
+                elif gain > MAX_SOUND_CHECK_GAIN_DB:
+                    gain = MAX_SOUND_CHECK_GAIN_DB
+                    warnings += (
+                        "Sound Check cannot boost this very quiet track by the full amount; its gain was limited.",
                     )
             checkpoint()
             if result.fingerprint.size > 0xFFFFFFFF:

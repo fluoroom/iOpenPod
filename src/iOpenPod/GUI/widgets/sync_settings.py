@@ -12,6 +12,7 @@ from iOpenPod.app.core.settings.definitions import (
     COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
+    FORCE_SOUND_CHECK,
     LOSSY_ENCODER,
     LOSSY_QUALITY,
     NORMALIZE_SAMPLE_RATE,
@@ -21,6 +22,7 @@ from iOpenPod.app.core.settings.definitions import (
     ROCKBOX_METADATA_SUPPORT,
     ROTATE_TALL_PHOTOS,
     SMART_QUALITY_BY_CONTENT_TYPE,
+    SOUND_CHECK_TARGET_LUFS,
     SPOKEN_WORD_BITRATE,
     SPOKEN_WORD_MONO,
     TRANSCODE_LOSSLESS_TO_LOSSY,
@@ -111,6 +113,12 @@ class SyncSettings(QWidget):
         self._sound_check = _Choice(
             scope, COMPUTE_SOUND_CHECK, "computeSoundCheck", self
         )
+        self._sound_check_target = _Choice(
+            scope, SOUND_CHECK_TARGET_LUFS, "soundCheckTargetLufs", self
+        )
+        self._force_sound_check = _Choice(
+            scope, FORCE_SOUND_CHECK, "forceSoundCheck", self
+        )
         self._genius = _Choice(scope, ANALYZE_FOR_GENIUS, "analyzeForGenius", self)
         self._ratings = _Choice(scope, BACK_SYNC_RATINGS, "backSyncRatings", self)
         self._rating_policy = _Choice(
@@ -138,6 +146,7 @@ class SyncSettings(QWidget):
             self._bpm,
             self._ratings,
             self._sound_check,
+            self._force_sound_check,
             self._normalize,
             self._rotate,
             self._fit,
@@ -147,6 +156,8 @@ class SyncSettings(QWidget):
         group.setMaximumWidth(960)
         for row in self._rows:
             group.add_row(row)
+            if row is self._sound_check:
+                group.add_row(self._sound_check_target)
         group.add_row(self._rating_policy)
         group.add_row(self._podcast_row)
         layout = QVBoxLayout(self)
@@ -154,6 +165,7 @@ class SyncSettings(QWidget):
         layout.setSpacing(LAYOUT.space_xs)
         layout.addWidget(self._title)
         layout.addWidget(group)
+        scope.changed.connect(self._refresh_sound_check_controls)
         self.retranslate_ui()
 
     def retranslate_ui(self) -> None:
@@ -171,6 +183,17 @@ class SyncSettings(QWidget):
         )
         for row in self._rows:
             row.configure(((self.tr("Off"), False), (self.tr("On"), True)))
+        self._sound_check_target.configure(
+            (
+                (self.tr("-23 LUFS (broadcast)"), -23.0),
+                (self.tr("-18 LUFS (ReplayGain)"), -18.0),
+                (self.tr("-16.5 LUFS (Apple Sound Check)"), -16.5),
+                (self.tr("-16 LUFS (Apple Music)"), -16.0),
+                (self.tr("-14 LUFS (streaming)"), -14.0),
+                (self.tr("-12 LUFS (loud)"), -12.0),
+                (self.tr("-10 LUFS (very loud)"), -10.0),
+            )
+        )
         self._scrobble.set_copy(
             self.tr("Scrobble during Sync"),
             self.tr(
@@ -229,6 +252,23 @@ class SyncSettings(QWidget):
                 "uses Sound Check. Host files stay unchanged."
             ),
         )
+        self._sound_check_target.set_copy(
+            self.tr("Sound Check target"),
+            self.tr(
+                "Reference loudness for newly computed Sound Check values. -16.5 LUFS "
+                "matches the Original iOpenPod's iTunes-derived reference; -18 LUFS "
+                "matches ReplayGain 2.0. Existing values are kept, so Tracks normalized "
+                "to different targets can play at different levels."
+            ),
+        )
+        self._force_sound_check.set_copy(
+            self.tr("Force Sound Check"),
+            self.tr(
+                "Analyze Tracks whose media is prepared during this Sync even when a "
+                "Sound Check or ReplayGain value already exists. Unchanged Tracks keep "
+                "their current values; Host files stay unchanged."
+            ),
+        )
         self._normalize.set_copy(
             self.tr("Normalize Tags After Sync"),
             self.tr(
@@ -259,9 +299,16 @@ class SyncSettings(QWidget):
                 "iPod firmware reads the Library database instead."
             ),
         )
+        self._refresh_sound_check_controls()
 
     def _refresh_podcast_scope(self) -> None:
         self._podcast_row.setVisible(not self._scope.device)
+
+    def _refresh_sound_check_controls(self) -> None:
+        # Device overrides remain editable so even an unused value can be unset.
+        compute = self._scope.device or self._scope.get(COMPUTE_SOUND_CHECK)
+        self._sound_check_target.setEnabled(compute)
+        self._force_sound_check.setEnabled(compute)
 
     def _open_podcast_defaults(self) -> None:
         if self._podcast_dialog is not None:

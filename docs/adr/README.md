@@ -338,3 +338,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0272: Use one maths thread per Genius worker](0272-use-one-maths-thread-per-genius-worker.md)
 - [ADR-0273: Retain Genius mel blocks for one spectral pass](0273-retain-genius-mel-blocks-for-one-spectral-pass.md)
 - [ADR-0274: Read one device Track at a time for Genius analysis](0274-read-one-device-track-at-a-time-for-genius-analysis.md)
+- [ADR-0275: Choose the Sound Check target and force recomputation](0275-choose-the-sound-check-target-and-force-recomputation.md)

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import base64
 import io
+import math
 import shutil
 import subprocess
+import wave
+from array import array
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -31,6 +34,7 @@ from iOpenPod.app.media.transcoding import (
     compatible_audio,
     compatible_video,
     enrich_source_metadata,
+    measure_sound_check_gain,
     resolve_transcode,
 )
 from iPodDB.library import ArtworkPixels, AudioEncoding, MediaKind, Track, TrackMetadata
@@ -76,6 +80,22 @@ def video_profile(request: pytest.FixtureRequest) -> DeviceProfile:
 def source(tmp_path: Path, filename: str) -> HostPath:
     path = tmp_path / filename
     path.write_bytes(base64.decodebytes((FIXTURES / f"{filename}.b64").read_bytes()))
+    return HostPath(path)
+
+
+def _sine_wav(path: Path, *, amplitude: int = 3000, seconds: int = 2) -> HostPath:
+    samples = array(
+        "h",
+        (
+            int(amplitude * math.sin(2 * math.pi * 440 * index / 44100))
+            for index in range(44100 * seconds)
+        ),
+    )
+    with wave.open(str(path), "wb") as stream:
+        stream.setnchannels(1)
+        stream.setsampwidth(2)
+        stream.setframerate(44100)
+        stream.writeframes(samples.tobytes())
     return HostPath(path)
 
 
@@ -730,6 +750,66 @@ def test_undamaged_source_reports_no_skipped_packets(
     ) as result:
         assert result.was_transcoded
     assert not any("damaged" in warning for warning in result.warnings)
+
+
+def test_sound_check_gain_uses_the_last_measurement_and_selected_target() -> None:
+    stderr = b"  I: -10.0 LUFS\n  I: -20.0 LUFS\n"
+
+    assert measure_sound_check_gain(stderr) == pytest.approx(3.5)
+    assert measure_sound_check_gain(stderr, -18.0) == pytest.approx(2.0)
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    (b"", b"no integrated loudness", b"  I: -70.0 LUFS", b"  I: -70.1 LUFS"),
+)
+def test_sound_check_gain_treats_the_silence_gate_as_unmeasured(stderr: bytes) -> None:
+    assert measure_sound_check_gain(stderr, -18.0) is None
+
+
+def test_sound_check_skips_an_existing_tag_unless_forced(
+    tmp_path: Path, profile: DeviceProfile, transcoder: MediaTranscoder
+) -> None:
+    path = _sine_wav(tmp_path / "two-second-tone.wav")
+    tagged = Track(
+        1,
+        "Title",
+        "Artist",
+        "Album",
+        1000,
+        metadata=TrackMetadata(normalization_gain_db=-4.0),
+    )
+    for force in (False, True):
+        with transcoder.prepare(
+            path,
+            profile,
+            TranscodeSettings(),
+            checkpoint=lambda: None,
+            metadata=tagged,
+            compute_sound_check=True,
+            force_sound_check=force,
+        ) as result:
+            if force:
+                assert result.normalization_gain_db is not None
+                assert result.normalization_gain_db != pytest.approx(-4.0, abs=1.0)
+            else:
+                assert result.normalization_gain_db is None
+
+
+def test_sound_check_limits_an_unrepresentable_boost(
+    tmp_path: Path, profile: DeviceProfile, transcoder: MediaTranscoder
+) -> None:
+    quiet = _sine_wav(tmp_path / "quiet-tone.wav", amplitude=30)
+    with transcoder.prepare(
+        quiet,
+        profile,
+        TranscodeSettings(),
+        checkpoint=lambda: None,
+        compute_sound_check=True,
+        sound_check_target_lufs=-10.0,
+    ) as result:
+        assert result.normalization_gain_db == pytest.approx(30.0)
+        assert any("limited" in warning for warning in result.warnings)
 
 
 def test_damaged_encoder_output_is_never_retried_leniently(

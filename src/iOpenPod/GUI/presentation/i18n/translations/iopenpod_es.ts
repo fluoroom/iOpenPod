@@ -10332,6 +10332,34 @@ Playlists: %3</translation>
         <translation>Activado</translation>
     </message>
     <message>
+        <source>-23 LUFS (broadcast)</source>
+        <translation>-23 LUFS (radiodifusión)</translation>
+    </message>
+    <message>
+        <source>-18 LUFS (ReplayGain)</source>
+        <translation>-18 LUFS (ReplayGain)</translation>
+    </message>
+    <message>
+        <source>-16.5 LUFS (Apple Sound Check)</source>
+        <translation>-16,5 LUFS (ajuste de sonido de Apple)</translation>
+    </message>
+    <message>
+        <source>-16 LUFS (Apple Music)</source>
+        <translation>-16 LUFS (Apple Music)</translation>
+    </message>
+    <message>
+        <source>-14 LUFS (streaming)</source>
+        <translation>-14 LUFS (streaming)</translation>
+    </message>
+    <message>
+        <source>-12 LUFS (loud)</source>
+        <translation>-12 LUFS (alto)</translation>
+    </message>
+    <message>
+        <source>-10 LUFS (very loud)</source>
+        <translation>-10 LUFS (muy alto)</translation>
+    </message>
+    <message>
         <source>Analyze for Genius</source>
         <translation>Analizar para Genius</translation>
     </message>
@@ -10346,6 +10374,22 @@ Playlists: %3</translation>
     <message>
         <source>Analyze loudness when usable Sound Check or ReplayGain values are missing. This adds analysis time; the iPod controls whether playback uses Sound Check. Host files stay unchanged.</source>
         <translation>Analiza el volumen si faltan valores válidos de ajuste de sonido o ReplayGain. Esto requiere más tiempo de análisis; el iPod decide si usa el ajuste de sonido al reproducir. Los archivos del equipo no cambian.</translation>
+    </message>
+    <message>
+        <source>Sound Check target</source>
+        <translation>Objetivo de ajuste de sonido</translation>
+    </message>
+    <message>
+        <source>Reference loudness for newly computed Sound Check values. -16.5 LUFS matches the Original iOpenPod&apos;s iTunes-derived reference; -18 LUFS matches ReplayGain 2.0. Existing values are kept, so Tracks normalized to different targets can play at different levels.</source>
+        <translation>Volumen de referencia para los nuevos valores calculados de ajuste de sonido. -16,5 LUFS coincide con la referencia derivada de iTunes del iOpenPod original; -18 LUFS coincide con ReplayGain 2.0. Los valores existentes se conservan, por lo que las pistas normalizadas con objetivos distintos pueden reproducirse a niveles diferentes.</translation>
+    </message>
+    <message>
+        <source>Force Sound Check</source>
+        <translation>Forzar ajuste de sonido</translation>
+    </message>
+    <message>
+        <source>Analyze Tracks whose media is prepared during this Sync even when a Sound Check or ReplayGain value already exists. Unchanged Tracks keep their current values; Host files stay unchanged.</source>
+        <translation>Analiza las pistas cuyo contenido multimedia se prepara durante esta sincronización aunque ya exista un valor de ajuste de sonido o ReplayGain. Las pistas sin cambios conservan sus valores actuales; los archivos del equipo no cambian.</translation>
     </message>
     <message>
         <source>Normalize Tags After Sync</source>

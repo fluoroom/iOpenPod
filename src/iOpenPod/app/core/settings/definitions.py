@@ -10,6 +10,8 @@ from typing import TypeGuard
 
 from PySide6.QtCore import QByteArray
 
+from iOpenPod.app.sound_check import DEFAULT_SOUND_CHECK_TARGET_LUFS
+
 from .paths import default_backup_path, default_log_path
 
 type Validator[Value] = Callable[[Value], bool]
@@ -379,6 +381,23 @@ COMPUTE_SOUND_CHECK = SettingDefinition[bool](
     value_type=bool,
     default=False,
     device_overridable=True,
+)
+FORCE_SOUND_CHECK = SettingDefinition[bool](
+    key="sync/force-sound-check",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
+)
+SOUND_CHECK_TARGET_LUFS = SettingDefinition[float](
+    key="sync/sound-check-target-lufs",
+    value_type=float,
+    default=DEFAULT_SOUND_CHECK_TARGET_LUFS,
+    device_overridable=True,
+    validator=lambda value: (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and -40 <= value <= 0
+    ),
 )
 ANALYZE_FOR_GENIUS = SettingDefinition[bool](
     key="sync/analyze-for-genius",

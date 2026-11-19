@@ -81,6 +81,25 @@ except that nonempty lyrics in the captured Host file supersede reviewed lyrics.
 Stock iPod lyrics still require verified embedded text and the database presence
 flag under ADR-0075.
 
+## Computed Sound Check
+
+Settings > Sync can compute a Track's native Sound Check value from FFmpeg EBU
+R128 integrated loudness. **Compute Sound Check** analyzes a Track only when its
+Host metadata supplies no usable Sound Check or ReplayGain value. **Force Sound
+Check** re-analyzes Tracks whose media is prepared during the Sync, replacing
+existing values; unchanged Tracks and metadata-only updates keep their current
+values.
+
+Both options use the selected **Sound Check target**: -23, -18, -16.5, -16, -14,
+-12, or -10 LUFS. The default -16.5 LUFS preserves the Original iOpenPod's
+iTunes-derived reference, and -18 LUFS follows ReplayGain 2.0. The target changes
+only newly computed values, so Tracks computed with different targets can play at
+different levels. Measurements at or below -70 LUFS are the filter's silence gate,
+and the existing value is retained. The native encoding can represent at most a
+30 dB boost, so a very quiet Track with a loud target is limited to 30 dB with a
+warning. Host files stay unchanged. See
+[ADR-0275](adr/0275-choose-the-sound-check-target-and-force-recomputation.md).
+
 ## Video artwork
 
 Video Sync prefers embedded artwork, then folder artwork such as `cover.jpg` or

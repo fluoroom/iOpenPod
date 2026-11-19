@@ -15,10 +15,12 @@ from iOpenPod.app.core.settings.definitions import (
     COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
+    FORCE_SOUND_CHECK,
     NORMALIZE_TAGS_AFTER_SYNC,
     RATING_CONFLICT_POLICY,
     ROCKBOX_METADATA_SUPPORT,
     ROTATE_TALL_PHOTOS,
+    SOUND_CHECK_TARGET_LUFS,
 )
 from iOpenPod.app.core.settings.transcoding import read_transcoder_settings
 from iOpenPod.app.display_text import exception_text, source_text
@@ -441,6 +443,8 @@ class SyncController(QObject):
                     scrobble_ratings=self._settings.get(SCROBBLE_RATINGS),
                     analyze_for_genius=self._settings.get(ANALYZE_FOR_GENIUS),
                     compute_sound_check=self._settings.get(COMPUTE_SOUND_CHECK),
+                    force_sound_check=self._settings.get(FORCE_SOUND_CHECK),
+                    sound_check_target_lufs=self._settings.get(SOUND_CHECK_TARGET_LUFS),
                     normalize_tags=self._settings.get(NORMALIZE_TAGS_AFTER_SYNC),
                     rotate_tall_photos=self._settings.get(ROTATE_TALL_PHOTOS),
                     fit_thumbnails=self._settings.get(FIT_THUMBNAILS),

@@ -287,6 +287,18 @@ def test_dual_audio_sound_check_measures_only_primary_audio(
         _assert_selected_audio(prepared.inspection, profile)
         assert prepared.normalization_gain_db == pytest.approx(primary_gain, abs=0.1)
         assert prepared.normalization_gain_db != pytest.approx(alternate_gain, abs=0.1)
+    with MediaTranscoder().prepare(
+        HostPath(path),
+        profile,
+        TranscodeSettings(),
+        checkpoint=lambda: None,
+        stream_selection=choice,
+        compute_sound_check=True,
+        sound_check_target_lufs=-18.0,
+    ) as prepared:
+        assert prepared.normalization_gain_db == pytest.approx(
+            primary_gain - 1.5, abs=0.05
+        )
 
 
 def test_saved_dual_audio_choice_survives_virtual_sync_without_repeat_replacement(
